@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
+const session = require('express-session');
 const app = express();
 
 app.set('view engine', 'ejs');
@@ -8,15 +9,24 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
-// === CONFIG - CHANGE HERE ===
+// Session for admin login
+app.use(session({
+  secret: 'fujibook-secret-2026-alhaji',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 1000 * 60 * 60 * 24 } // 1 day
+}));
+
+// === CONFIG ===
 const ALHAJI = {
   name: 'Alhaji Sir Shina Akanni International',
   shortName: 'Sir Shina Akanni(S.S.A)',
   tagline: 'Maryland, USA & Ibafo, Ogun State Fuji Legend',
-  phone: '2348023014535', // HIS REAL WHATSAPP - no +
+  phone: '2348023014535',
   whatsappMsg: 'Alhaji, I saw your website, I want to book you',
   youtubeId: '76RNVoM3ADQ',
-  adminPass: 'fuji2026' // Password for /admin - change it
+  adminUser: 'alhaji',
+  adminPass: 'fuji2026'
 };
 
 let packages = [
@@ -27,10 +37,15 @@ let packages = [
 let bookings = [];
 let nextId = 1;
 
-// Simple admin protection
+// NEW Admin protection - session based
 function adminAuth(req,res,next){
-  if(req.query.pass === ALHAJI.adminPass) return next();
-  res.send(`<body style="background:#000;color:#fff;font-family:system-ui;padding:40px"><h2>Admin Login</h2><p>Add ?pass=${ALHAJI.adminPass} to URL</p><p>Example: /admin/bookings?pass=${ALHAJI.adminPass}</p><a href="/" style="color:#f5c518">Home</a></body>`);
+  if(req.session && req.session.isAdmin) return next();
+  // allow old ?pass link for you temporarily
+  if(req.query.pass === ALHAJI.adminPass){
+    req.session.isAdmin = true;
+    return next();
+  }
+  return res.redirect('/admin/login');
 }
 
 // Public
@@ -48,9 +63,25 @@ app.post('/book/:id', (req,res)=>{
   res.render('public/success', { booking: b, alhaji: ALHAJI });
 });
 
-// Admin
-app.get('/admin/bookings', adminAuth, (req,res)=> res.render('admin/bookings', { bookings, alhaji: ALHAJI, pass: req.query.pass }));
-app.get('/admin/packages', adminAuth, (req,res)=> res.render('admin/packages', { packages, alhaji: ALHAJI, pass: req.query.pass }));
+// === NEW LOGIN PAGES ===
+app.get('/admin/login', (req,res)=>{
+  res.render('admin/login', { alhaji: ALHAJI, error: null });
+});
+app.post('/admin/login', (req,res)=>{
+  const { username, password } = req.body;
+  if(username === ALHAJI.adminUser && password === ALHAJI.adminPass){
+    req.session.isAdmin = true;
+    return res.redirect('/admin/bookings');
+  }
+  res.render('admin/login', { alhaji: ALHAJI, error: 'Wrong username or password' });
+});
+app.get('/admin/logout', (req,res)=>{
+  req.session.destroy(()=> res.redirect('/admin/login'));
+});
+
+// Admin (protected)
+app.get('/admin/bookings', adminAuth, (req,res)=> res.render('admin/bookings', { bookings, alhaji: ALHAJI, pass: '' }));
+app.get('/admin/packages', adminAuth, (req,res)=> res.render('admin/packages', { packages, alhaji: ALHAJI, pass: '' }));
 app.post('/admin/packages', adminAuth, (req,res)=>{
   const action = req.body.action;
   if(action==='add'){
@@ -58,10 +89,10 @@ app.post('/admin/packages', adminAuth, (req,res)=>{
   } else if(action==='delete'){
     packages = packages.filter(p=>p._id!==req.body.id);
   }
-  res.redirect('/admin/packages?pass='+req.query.pass);
+  res.redirect('/admin/packages');
 });
-app.get('/admin/bookings/delete/:id', adminAuth, (req,res)=>{ bookings = bookings.filter(b=>b._id!==req.params.id); res.redirect('/admin/bookings?pass='+req.query.pass); });
-app.get('/admin', adminAuth, (req,res)=> res.redirect('/admin/bookings?pass='+req.query.pass));
+app.get('/admin/bookings/delete/:id', adminAuth, (req,res)=>{ bookings = bookings.filter(b=>b._id!==req.params.id); res.redirect('/admin/bookings'); });
+app.get('/admin', (req,res)=> res.redirect('/admin/bookings'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=> console.log(`🔥 FUJIBOOK FULL LIVE http://localhost:${PORT} Admin pass: ${ALHAJI.adminPass}`));
+app.listen(PORT, ()=> console.log(`🔥 FUJIBOOK FULL LIVE http://localhost:${PORT} Admin: alhaji / ${ALHAJI.adminPass}`));
